@@ -14,6 +14,8 @@ use crossbeam_channel::internal::SelectHandle;
 #[tokio::main]
 async fn main() -> io::Result<()> {
 
+    const REMOTE_RESOURCE: &str = "216.58.204.78:80";
+
     colog::init();
 
     async fn remote_server_thread(
@@ -21,7 +23,8 @@ async fn main() -> io::Result<()> {
         rxA: Receiver<String>,
     ) -> Result<(), Box<dyn Error>> {
         info!("Setup remote connection thread ...");
-        let std_stream = std::net::TcpStream::connect("216.58.204.78:80")?;
+
+        let std_stream = std::net::TcpStream::connect(REMOTE_RESOURCE)?;
         std_stream.set_nonblocking(true)?;
         //let stream = TcpStream::from_std(std_stream)?;
         let mut remoteStream = TcpStream::from_std(std_stream).unwrap(); //TcpStream::connect("216.58.204.78:80").await.unwrap();
