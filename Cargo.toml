@@ -1,0 +1,15 @@
+[package]
+name = "tcpTokioServer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.42.0", features = ["full"] }
+futures = "0.3.31"
+time = "0.3.37"
+log = "0.4.22"
+colog = "1.3.0"
+crossbeam-channel = "0.5.14"
+
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
