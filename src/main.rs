@@ -1,11 +1,11 @@
 use std::error::Error;
-use std::io;
+use std::{io, thread, time};
 use std::str;
 use crossbeam_channel::{bounded, Receiver, SendError, Sender, TryRecvError};
 use tokio::io::{AsyncReadExt, Interest};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use log::{info, error};
+use log::{info, error, warn};
 
 use simplelog::*;
 
@@ -154,6 +154,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
             let mut data = vec![0; 1024];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
+
             match local_stream.try_read(&mut data) {
                 Ok(_) => {
                     let response_string = str::from_utf8(&data).unwrap();
@@ -198,7 +199,9 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
                     }
                 }
                 Err(e) => {
-                    error!("Local->Write error/v3: {}", e);
+                    warn!("Local->Write error/v3: {}", e);
+                    let ten_millis = time::Duration::from_millis(25);
+                    thread::sleep(ten_millis);
                     continue;
                 }
             }
@@ -212,14 +215,14 @@ async fn main() -> io::Result<()> {
     CombinedLogger::init(
         vec![
             TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("tcpTokioServer.log").unwrap()),
+            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("logs/tcpTokioServer.log").unwrap()),
         ]
     ).unwrap();
 
     let local_listener = TcpListener::bind("127.0.0.1:8181").await?;
     loop {
         let (socket, _) = local_listener.accept().await?;
-        print!("Ready to accept connection ...");
+        info!("Ready to accept connection ...");
         process_local_stream(socket).await.expect("Filed to process incoming connection");
     }
 
