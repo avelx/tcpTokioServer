@@ -16,7 +16,16 @@ async fn main() -> io::Result<()> {
 
     const REMOTE_RESOURCE: &str = "216.58.204.78:80";
 
-    colog::init();
+    //colog::init();
+
+    let mut builder = colog::default_builder();
+    builder.filter(None, log::LevelFilter::Trace);
+    builder.init();
+
+    //let mut clog = colog::default_builder();
+    //clog.filter(None, log::LevelFilter::Warn);
+    //clog.filter(None, log::LevelFilter::Info);
+    //clog.init();
 
     async fn remote_server_thread(
         txA: Sender<String>,
@@ -26,8 +35,7 @@ async fn main() -> io::Result<()> {
 
         let std_stream = std::net::TcpStream::connect(REMOTE_RESOURCE)?;
         std_stream.set_nonblocking(true)?;
-        //let stream = TcpStream::from_std(std_stream)?;
-        let mut remoteStream = TcpStream::from_std(std_stream).unwrap(); //TcpStream::connect("216.58.204.78:80").await.unwrap();
+        let mut remoteStream = TcpStream::from_std(std_stream).unwrap();
         loop {
             let ready = remoteStream
                 .ready(Interest::READABLE | Interest::WRITABLE)
@@ -35,8 +43,8 @@ async fn main() -> io::Result<()> {
                 .unwrap();
 
             info!("Remote->Stream status: {:?}", ready);
-            let ten_millis = time::Duration::from_millis(2000);
-            thread::sleep(ten_millis);
+            //let ten_millis = time::Duration::from_millis(2000);
+            //thread::sleep(ten_millis);
 
             if ready.is_readable() {
                 info!("Remote->Ready to read ...");
