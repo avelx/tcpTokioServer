@@ -7,6 +7,10 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use log::{info, error};
 
+use simplelog::*;
+
+use std::fs::File;
+
 const REMOTE_RESOURCE: &str = "216.58.204.78:80";
 
 async fn remote_server_thread(
@@ -205,7 +209,12 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
 #[tokio::main]
 async fn main() -> io::Result<()> {
 
-    colog::init();
+    CombinedLogger::init(
+        vec![
+            TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("tcpTokioServer.log").unwrap()),
+        ]
+    ).unwrap();
 
     let local_listener = TcpListener::bind("127.0.0.1:8181").await?;
     loop {
