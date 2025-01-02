@@ -1,14 +1,11 @@
 use std::error::Error;
 use std::io;
 use std::str;
-use crossbeam_channel::{bounded, unbounded, Receiver, SendError, Sender, TryRecvError};
-use std::{thread, time};
-use std::ops::Add;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
+use crossbeam_channel::{bounded, Receiver, SendError, Sender, TryRecvError};
+use tokio::io::{AsyncReadExt, Interest};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use log::{info, warn, error};
-use std::net::{Shutdown};
+use log::{info, error};
 use crossbeam_channel::internal::SelectHandle;
 
 const REMOTE_RESOURCE: &str = "216.58.204.78:80";
@@ -77,7 +74,7 @@ async fn remote_server_thread(
                             //remoteStream.flush().await.unwrap();
                             //remoteStream.shutdown(); //.expect("shutdown call failed")
 
-                            let mut data = vec![0; 8024];
+                            let data = vec![0; 8024];
                             // Try to read data, this may still fail with `WouldBlock`
                             // if the readiness event is a false positive.
                             let mut response: String = String::from("");
