@@ -6,21 +6,21 @@ use tokio::io::{AsyncReadExt, Interest};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use log::{info, error};
-use crossbeam_channel::internal::SelectHandle;
 
 const REMOTE_RESOURCE: &str = "216.58.204.78:80";
 
 async fn remote_server_thread(
-    txA: Sender<String>,
-    rxA: Receiver<String>,
+    tx_a: Sender<String>,
+    rx_a: Receiver<String>,
 ) -> Result<(), Box<dyn Error>> {
     info!("Setup remote connection thread ...");
 
     let std_stream = std::net::TcpStream::connect(REMOTE_RESOURCE)?;
     std_stream.set_nonblocking(true)?;
-    let mut remoteStream = TcpStream::from_std(std_stream).unwrap();
+    let mut remote_stream = TcpStream::from_std(std_stream).unwrap();
+
     loop {
-        let ready = remoteStream
+        let ready = remote_stream
             .ready(Interest::READABLE | Interest::WRITABLE)
             .await
             .unwrap();
@@ -34,12 +34,12 @@ async fn remote_server_thread(
             let mut data = vec![0; 8024];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
-            match remoteStream.try_read(&mut data) {
-                Ok(n) => {
+            match remote_stream.try_read(&mut data) {
+                Ok(_) => {
                     let response_string = str::from_utf8(&data).unwrap();
                     info!("Remote->Response2:\n\r{}", response_string);
                     //let val = String::from("hi");
-                    txA.send(response_string.to_string()).unwrap();
+                    tx_a.send(response_string.to_string()).unwrap();
                     return Ok(());
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -56,7 +56,7 @@ async fn remote_server_thread(
 
         if ready.is_writable() {
             info!("Writable ...");
-            for request_remote in rxA.try_recv() {
+            while let Ok(request_remote) = rx_a.try_recv() {
                 let request_remote2: String = request_remote
                     .replace("Host: localhost:8181", "Host: google.com");
                 //.replace("GET /", "GET http://google.com");
@@ -68,21 +68,20 @@ async fn remote_server_thread(
                 // if the readiness event is a false positive.
                 if request_remote2.len() > 0 {
                     info!("Attempt to write");
-                    match remoteStream.try_write(request_remote2.as_bytes()) {
+                    match remote_stream.try_write(request_remote2.as_bytes()) {
                         Ok(n) => {
                             info!("Remote write {} bytes", n);
                             //remoteStream.flush().await.unwrap();
                             //remoteStream.shutdown(); //.expect("shutdown call failed")
 
-                            let data = vec![0; 8024];
                             // Try to read data, this may still fail with `WouldBlock`
                             // if the readiness event is a false positive.
                             let mut response: String = String::from("");
-                            remoteStream.read_to_string(&mut response).await.unwrap();
+                            remote_stream.read_to_string(&mut response).await.unwrap();
                             //let response_string = str::from_utf8(&data).unwrap();
                             info!("Remote->Response:\n\r{} - {}", response, response.len());
                             if response.len() > 0 {
-                                let res: Result<(), SendError<String>> = txA.send(response.to_string());
+                                let res: Result<(), SendError<String>> = tx_a.send(response.to_string());
                                 //txA.send(response.to_string()).unwrap_err();
                                 match res {
                                     Ok(e) => {
@@ -120,12 +119,12 @@ async fn remote_server_thread(
 async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Error>> {
 
     //Transmitter from local / Receiver to remote
-    let (txLocal, rxRemote) = bounded(0);
+    let (tx_local, rx_remote) = bounded(0);
     // Transmitter from remote, Receiver to local
-    let (txRemote, rxLocal) = bounded(0);
+    let (tx_remote, rx_local) = bounded(0);
 
     tokio::spawn(async {
-        let res = remote_server_thread(txRemote, rxRemote).await;
+        let res = remote_server_thread(tx_remote, rx_remote).await;
         match res {
             Ok(_) => {
                 info!("Local->thread result: OK");
@@ -152,11 +151,11 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
             match local_stream.try_read(&mut data) {
-                Ok(n) => {
+                Ok(_) => {
                     let response_string = str::from_utf8(&data).unwrap();
                     info!("Local->Response: {}", response_string);
                     //let val = String::from("hi");
-                    txLocal.send(response_string.to_string()).unwrap();
+                    tx_local.send(response_string.to_string()).unwrap();
                     continue;
                     //return Ok(());
                 }
@@ -173,7 +172,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
 
         if ready.is_writable() {
             info!("Local->Read ...");
-            let request_local: Result<String, TryRecvError> = rxLocal.try_recv();
+            let request_local: Result<String, TryRecvError> = rx_local.try_recv();
             //info!("Local->Request bytes: {}", request_local);
             // Try to write data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
