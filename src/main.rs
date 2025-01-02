@@ -165,7 +165,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<(), Box<dyn Err
                     //return Ok(());
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    error!("Local->Read error: {}", e);
+                    warn!("Local->Read error: {}", e);
                     continue;
                 }
                 Err(e) => {
@@ -214,7 +214,7 @@ async fn main() -> io::Result<()> {
 
     CombinedLogger::init(
         vec![
-            TermLogger::new(LevelFilter::Warn, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            TermLogger::new(LevelFilter::Error, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
             WriteLogger::new(LevelFilter::Info, Config::default(), File::create("logs/tcpTokioServer.log").unwrap()),
         ]
     ).unwrap();
