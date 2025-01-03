@@ -11,7 +11,7 @@ use simplelog::*;
 
 use std::fs::File;
 
-const REMOTE_RESOURCE: &str = "216.58.204.78:80";
+const REMOTE_RESOURCE: &str = "142.250.180.14:80";
 const LOCAL_RESOURCE: &str = "127.0.0.1:8181";
 
 async fn remote_server_thread(
@@ -30,11 +30,9 @@ async fn remote_server_thread(
             .await
             .unwrap();
 
-        info!("Remote->Stream status: {:?}", ready);
-        //let ten_millis = time::Duration::from_millis(2000);
-        //thread::sleep(ten_millis);
+        //info!("Remote->Stream status: {:?}", ready);
 
-        if ready.is_readable() {
+        if ready.is_readable() && !ready.is_read_closed(){
             info!("Remote->Ready to read ...");
             let mut data = vec![0; 8024];
             // Try to read data, this may still fail with `WouldBlock`
@@ -58,9 +56,8 @@ async fn remote_server_thread(
             }
         }
 
-
-        if ready.is_writable() {
-            info!("Writable ...");
+        if ready.is_writable() && !ready.is_write_closed(){
+            //info!("Writable ...");
             while let Ok(request_remote) = rx_a.try_recv() {
                 let request_remote2: String = request_remote
                     .replace("Host: localhost:8181", "Host: google.com");
@@ -135,6 +132,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
     });
 
     info!("Local:Processing ...");
+    let mut max_attempts_to_write: i32 = 10;
     loop {
         let ready = local_stream
             .ready(Interest::READABLE | Interest::WRITABLE)
@@ -198,11 +196,17 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                         }
                     }
                 }
-                Err(e) => {
+                Err(e) if max_attempts_to_write >= 0 => {
                     warn!("Local->Write error/v3: {}", e);
+                    max_attempts_to_write -= 1;
                     let ten_millis = time::Duration::from_millis(25);
                     thread::sleep(ten_millis);
                     continue;
+                }
+                Err(e) => {
+                    warn!("Local->Write error/v3: {}", e);
+                    let result: String = String::from("LocalThreadTerminated::error");
+                    return Ok(result);
                 }
             }
         }
@@ -221,7 +225,7 @@ async fn main() -> io::Result<()> {
 
     CombinedLogger::init(
         vec![
-            TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            TermLogger::new(LevelFilter::Error, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
             WriteLogger::new(LevelFilter::Info, Config::default(), File::create("logs/tcpTokioServer.log").unwrap()),
         ]
     ).unwrap();
@@ -234,11 +238,13 @@ async fn main() -> io::Result<()> {
     match res {
         Ok(_) => {
             info!("Final result: {:?}", res);
-            return Ok(());
+            //return Ok(());
+            std::process::exit(0);
         },
         Err(e) => {
             info!("Final Error: {:?}", e);
-            return Ok(());
+            //return Ok(());
+            std::process::exit(-1);
         }
     }
 
