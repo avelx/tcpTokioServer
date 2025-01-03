@@ -10,6 +10,7 @@ use log::{info, error, warn};
 use simplelog::*;
 
 use std::fs::File;
+use std::io::Read;
 
 const REMOTE_RESOURCE: &str = "142.250.180.14:80";
 const LOCAL_RESOURCE: &str = "127.0.0.1:8181";
@@ -18,7 +19,6 @@ async fn remote_server_thread(
     tx_a: Sender<String>,
     rx_a: Receiver<String>,
 ) -> Result<(), Box<dyn Error>> {
-    info!("Setup remote connection thread ...");
 
     let std_stream = std::net::TcpStream::connect(REMOTE_RESOURCE)?;
     std_stream.set_nonblocking(true)?;
@@ -33,7 +33,6 @@ async fn remote_server_thread(
         //info!("Remote->Stream status: {:?}", ready);
 
         if ready.is_readable() && !ready.is_read_closed(){
-            info!("Remote->Ready to read ...");
             let mut data = vec![0; 8024];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
@@ -57,19 +56,14 @@ async fn remote_server_thread(
         }
 
         if ready.is_writable() && !ready.is_write_closed(){
-            //info!("Writable ...");
             while let Ok(request_remote) = rx_a.try_recv() {
                 let request_remote2: String = request_remote
                     .replace("Host: localhost:8181", "Host: google.com");
-                //.replace("GET /", "GET http://google.com");
-                //.add("\r\n");
-                //.trim().to_string();
                 info!("Request->Remote/modified:\n\r{}", request_remote2);
 
                 // Try to write data, this may still fail with `WouldBlock`
                 // if the readiness event is a false positive.
                 if request_remote2.len() > 0 {
-                    info!("Attempt to write");
                     match remote_stream.try_write(request_remote2.as_bytes()) {
                         Ok(n) => {
                             info!("Remote write {} bytes", n);
@@ -131,8 +125,9 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
         }
     });
 
-    info!("Local:Processing ...");
     let mut max_attempts_to_write: i32 = 10;
+    let mut final_response: String = String::from("");
+
     loop {
         let ready = local_stream
             .ready(Interest::READABLE | Interest::WRITABLE)
@@ -141,7 +136,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
 
         info!("Local->Stream status: {:?}", ready);
 
-        if ready.is_readable() && !ready.is_read_closed() {
+        if (ready.is_readable() && !ready.is_read_closed()) {
             let mut data = vec![0; 1024];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
@@ -150,11 +145,10 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                 Ok(_) => {
                     let response_string = str::from_utf8(&data).unwrap();
                     info!("Local->Response: {}", response_string);
-                    //let val = String::from("hi");
+
                     let sent_result = tx_local.send(response_string.to_string());
                     match sent_result {
                         Ok(_) => {
-                            //return Ok(());
                             continue;
                         },
                         Err(e) => {
@@ -174,7 +168,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
         }
 
         if ready.is_writable() && !ready.is_write_closed() {
-            info!("Local->Read ...");
+            info!("Local->Write ...");
             let request_local: Result<String, TryRecvError> = rx_local.try_recv();
             //info!("Local->Request bytes: {}", request_local);
             // Try to write data, this may still fail with `WouldBlock`
@@ -183,7 +177,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                 Ok(request) => {
                     match local_stream.try_write(request.as_ref()) {
                         Ok(n) => {
-                            info!("Local=>write {} bytes", n);
+                            error!("Local=>write {}", request);
                             continue
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -205,13 +199,13 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                 }
                 Err(e) => {
                     warn!("Local->Write error/v3: {}", e);
-                    let result: String = String::from("LocalThreadTerminated::error");
+                    let result: String = String::from(final_response);
                     return Ok(result);
                 }
             }
         }
 
-        if (ready.is_read_closed() && ready.is_write_closed()){
+        if ((ready.is_read_closed() && ready.is_write_closed())){
             info!("Local thread to be terminated");
             let result: String = String::from("LocalThreadTerminated");
             return Ok(result);
@@ -233,17 +227,14 @@ async fn main() -> io::Result<()> {
     let local_listener = TcpListener::bind(LOCAL_RESOURCE).await?;
 
     let (socket, _) = local_listener.accept().await?;
-    info!("Ready to accept connection ...");
     let res = process_local_stream(socket).await;
     match res {
         Ok(_) => {
-            info!("Final result: {:?}", res);
-            //return Ok(());
+            error!("Final result: {:?}", res);
             std::process::exit(0);
         },
         Err(e) => {
-            info!("Final Error: {:?}", e);
-            //return Ok(());
+            error!("Final Error: {:?}", e);
             std::process::exit(-1);
         }
     }
