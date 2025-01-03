@@ -138,8 +138,6 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
 
         if (ready.is_readable() && !ready.is_read_closed()) {
             let mut data = vec![0; 1024];
-            // Try to read data, this may still fail with `WouldBlock`
-            // if the readiness event is a false positive.
 
             match local_stream.try_read(&mut data) {
                 Ok(_) => {
@@ -170,14 +168,13 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
         if ready.is_writable() && !ready.is_write_closed() {
             info!("Local->Write ...");
             let request_local: Result<String, TryRecvError> = rx_local.try_recv();
-            //info!("Local->Request bytes: {}", request_local);
-            // Try to write data, this may still fail with `WouldBlock`
-            // if the readiness event is a false positive.
             match request_local {
                 Ok(request) => {
                     match local_stream.try_write(request.as_ref()) {
                         Ok(n) => {
-                            error!("Local=>write {}", request);
+                            // RETURN WHOLE RESPONSE BUDDY TO CALLING FUNCTION
+                            final_response = request.clone();
+                            info!("Local=>write {}", request);
                             continue
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -229,8 +226,8 @@ async fn main() -> io::Result<()> {
     let (socket, _) = local_listener.accept().await?;
     let res = process_local_stream(socket).await;
     match res {
-        Ok(_) => {
-            error!("Final result: {:?}", res);
+        Ok(res_string) => {
+            error!("Final result: {:?}", res_string);
             std::process::exit(0);
         },
         Err(e) => {
