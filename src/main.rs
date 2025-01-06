@@ -1,25 +1,42 @@
-use std::error::Error;
-use std::{io, thread, time};
-use std::str;
 use crossbeam_channel::{bounded, Receiver, SendError, Sender, TryRecvError};
+use log::{error, info, warn};
+use std::error::Error;
+use std::str;
+use std::{io, thread, time};
 use tokio::io::{AsyncReadExt, Interest};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use log::{info, error, warn};
 
 use simplelog::*;
 
 use std::fs::File;
 use std::io::Read;
 
+use regex::{Match, Regex};
+use std::fmt;
+
 const REMOTE_RESOURCE: &str = "142.250.180.14:80";
 const LOCAL_RESOURCE: &str = "127.0.0.1:8181";
 
+// PARSING FUNCTION's
+fn parse_response(response: String) -> Option<String> {
+    let re: Regex = Regex::new(r"Location:\shttp://([a-zA-Z\\.]+)+").unwrap();
+    let mut results = vec![];
+    for (_, [location]) in re.captures_iter(&*response).map(|c| c.extract()) {
+        results.push(location);
+    }
+    if (results.len() == 0){
+        None
+    } else {
+        Some(results.get(0)?.to_string())
+    }
+}
+
+// ASYNC FUNCTIONS
 async fn remote_server_thread(
     tx_a: Sender<String>,
     rx_a: Receiver<String>,
 ) -> Result<(), Box<dyn Error>> {
-
     let std_stream = std::net::TcpStream::connect(REMOTE_RESOURCE)?;
     std_stream.set_nonblocking(true)?;
     let mut remote_stream = TcpStream::from_std(std_stream).unwrap();
@@ -32,7 +49,7 @@ async fn remote_server_thread(
 
         //info!("Remote->Stream status: {:?}", ready);
 
-        if ready.is_readable() && !ready.is_read_closed(){
+        if ready.is_readable() && !ready.is_read_closed() {
             let mut data = vec![0; 8024];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
@@ -55,10 +72,10 @@ async fn remote_server_thread(
             }
         }
 
-        if ready.is_writable() && !ready.is_write_closed(){
+        if ready.is_writable() && !ready.is_write_closed() {
             while let Ok(request_remote) = rx_a.try_recv() {
-                let request_remote2: String = request_remote
-                    .replace("Host: localhost:8181", "Host: google.com");
+                let request_remote2: String =
+                    request_remote.replace("Host: localhost:8181", "Host: google.com");
                 info!("Request->Remote/modified:\n\r{}", request_remote2);
 
                 // Try to write data, this may still fail with `WouldBlock`
@@ -77,7 +94,8 @@ async fn remote_server_thread(
                             //let response_string = str::from_utf8(&data).unwrap();
                             info!("Remote->Response:\n\r{} - {}", response, response.len());
                             if response.len() > 0 {
-                                let res: Result<(), SendError<String>> = tx_a.send(response.to_string());
+                                let res: Result<(), SendError<String>> =
+                                    tx_a.send(response.to_string());
                                 match res {
                                     Ok(e) => {
                                         info!("Remote->sent response to local: {:?}", e);
@@ -85,15 +103,14 @@ async fn remote_server_thread(
                                     }
                                     _ => {
                                         error!("Error sending response v6");
-                                        continue
+                                        continue;
                                     }
                                 }
                             }
-
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                             error!("Remote write error: {}", e);
-                            continue
+                            continue;
                         }
                         Err(e) => {
                             error!("Remote write error: {}", e);
@@ -107,7 +124,6 @@ async fn remote_server_thread(
 }
 
 async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn Error>> {
-
     //Transmitter from local / Receiver to remote
     let (tx_local, rx_remote) = bounded(0);
     // Transmitter from remote, Receiver to local
@@ -148,7 +164,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                     match sent_result {
                         Ok(_) => {
                             continue;
-                        },
+                        }
                         Err(e) => {
                             continue;
                         }
@@ -174,13 +190,14 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                         Ok(n) => {
                             // RETURN WHOLE RESPONSE BUDDY TO CALLING FUNCTION
                             final_response = request.clone();
-                            info!("Local=>write {}", request);
-                            continue
+                            let location = parse_response(final_response.clone());
+                            error!("Local=>write {}", location.unwrap());
+                            continue;
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                             error!("Local->Write error: {}", e);
-                            continue
-                        },
+                            continue;
+                        }
                         Err(e) => {
                             error!("Local->Write error/v2: {}", e);
                             return Err(e.into());
@@ -202,24 +219,30 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
             }
         }
 
-        if ((ready.is_read_closed() && ready.is_write_closed())){
+        if (ready.is_read_closed() && ready.is_write_closed()) {
             info!("Local thread to be terminated");
             let result: String = String::from("LocalThreadTerminated");
             return Ok(result);
         }
-
     }
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-
-    CombinedLogger::init(
-        vec![
-            TermLogger::new(LevelFilter::Error, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("logs/tcpTokioServer.log").unwrap()),
-        ]
-    ).unwrap();
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            LevelFilter::Error,
+            Config::default(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ),
+        WriteLogger::new(
+            LevelFilter::Info,
+            Config::default(),
+            File::create("logs/tcpTokioServer.log").unwrap(),
+        ),
+    ])
+    .unwrap();
 
     let local_listener = TcpListener::bind(LOCAL_RESOURCE).await?;
 
@@ -227,13 +250,12 @@ async fn main() -> io::Result<()> {
     let res = process_local_stream(socket).await;
     match res {
         Ok(res_string) => {
-            error!("Final result: {:?}", res_string);
+            info!("Final result: {:?}", res_string);
             std::process::exit(0);
-        },
+        }
         Err(e) => {
             error!("Final Error: {:?}", e);
             std::process::exit(-1);
         }
     }
-
 }
