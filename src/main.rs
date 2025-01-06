@@ -18,18 +18,16 @@ use std::fmt;
 const REMOTE_RESOURCE: &str = "142.250.180.14:80";
 const LOCAL_RESOURCE: &str = "127.0.0.1:8181";
 
-// PARSING FUNCTION's
-fn parse_response(response: String) -> Option<String> {
+// PARSING FUNCTION's:
+
+// Parse Http response string and extract Location;
+// Return first found location in the response or None if nothing found;
+fn extract_location(response: String) -> Option<String> {
     let re: Regex = Regex::new(r"Location:\shttp://([a-zA-Z\\.]+)+").unwrap();
-    let mut results = vec![];
     for (_, [location]) in re.captures_iter(&*response).map(|c| c.extract()) {
-        results.push(location);
+        return Some(location.to_string());
     }
-    if (results.len() == 0){
-        None
-    } else {
-        Some(results.get(0)?.to_string())
-    }
+    None
 }
 
 // ASYNC FUNCTIONS
@@ -190,7 +188,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                         Ok(n) => {
                             // RETURN WHOLE RESPONSE BUDDY TO CALLING FUNCTION
                             final_response = request.clone();
-                            let location = parse_response(final_response.clone());
+                            let location = extract_location(final_response.clone());
                             error!("Local=>write {}", location.unwrap());
                             continue;
                         }
