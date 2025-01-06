@@ -27,7 +27,7 @@ fn extract_location(response: String) -> Option<String> {
     let Some(location) = re.captures(response.as_str()) else {
         return None;
     };
-    return Some(location.get(1).unwrap().as_str().to_string());
+    Some(location.get(1).unwrap().as_str().to_string())
 }
 
 // ASYNC FUNCTIONS
