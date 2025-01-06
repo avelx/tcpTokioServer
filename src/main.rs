@@ -24,10 +24,10 @@ const LOCAL_RESOURCE: &str = "127.0.0.1:8181";
 // Return first found location in the response or None if nothing found;
 fn extract_location(response: String) -> Option<String> {
     let re: Regex = Regex::new(r"Location:\shttp://([a-zA-Z\\.]+)+").unwrap();
-    for (_, [location]) in re.captures_iter(&*response).map(|c| c.extract()) {
-        return Some(location.to_string());
-    }
-    None
+    let Some(location) = re.captures(response.as_str()) else {
+        return None;
+    };
+    return Some(location.get(1).unwrap().as_str().to_string());
 }
 
 // ASYNC FUNCTIONS
