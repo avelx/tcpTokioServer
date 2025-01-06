@@ -187,9 +187,9 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
                     match local_stream.try_write(request.as_ref()) {
                         Ok(n) => {
                             // RETURN WHOLE RESPONSE BUDDY TO CALLING FUNCTION
-                            final_response = request.clone();
-                            let location = extract_location(final_response.clone());
-                            error!("Local=>write {}", location.unwrap());
+                            let location = extract_location(request.clone());
+                            final_response = location.unwrap();
+                            info!("Local=>write {}", request);
                             continue;
                         }
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -219,7 +219,7 @@ async fn process_local_stream(local_stream: TcpStream) -> Result<String, Box<dyn
 
         if (ready.is_read_closed() && ready.is_write_closed()) {
             info!("Local thread to be terminated");
-            let result: String = String::from("LocalThreadTerminated");
+            let result: String = String::from(final_response);
             return Ok(result);
         }
     }
@@ -248,7 +248,7 @@ async fn main() -> io::Result<()> {
     let res = process_local_stream(socket).await;
     match res {
         Ok(res_string) => {
-            info!("Final result: {:?}", res_string);
+            error!("Final result: {:?}", res_string);
             std::process::exit(0);
         }
         Err(e) => {
